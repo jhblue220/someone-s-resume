@@ -355,7 +355,7 @@ function spawnPhoto(file, zIdx, shakeVx, shakeVy) {
   el.style.zIndex  = zIdx + 1;
 
   const img = document.createElement('img');
-  img.src = 'image/' + file;
+  img.src = 'image/' + encodeURIComponent(file);
   img.alt = file;
   img.draggable = false;
   el.appendChild(img);
