@@ -283,13 +283,15 @@ document.addEventListener('mouseup', e => {
       p.vx = (recent[recent.length - 1].x - recent[0].x) / dt * 16;
       p.vy = (recent[recent.length - 1].y - recent[0].y) / dt * 16;
       p.rotV = p.vx * 0.04;
+      p.landed = false;
+      if (!rafId) rafId = requestAnimationFrame(physicsLoop);
     } else {
-      p.vx = 0; p.vy = 0;
+      // 드래그 없이 클릭만 — 정지 상태 유지
+      p.vx = 0; p.vy = 0; p.rotV = 0;
+      p.landed = true;
     }
 
-    p.landed = false;
     dragPhotoHist = [];
-    if (!rafId) rafId = requestAnimationFrame(physicsLoop);
   }
 });
 
