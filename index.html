@@ -413,34 +413,65 @@ function physicsLoop() {
 
 /* ─────────────────────────────────────────────
    OVERLAP RESOLUTION (post-settle)
+   2D separation: pushes apart on whichever axis
+   has smaller overlap; photos stack upward when
+   horizontal space is exhausted.
 ───────────────────────────────────────────── */
 function resolveOverlaps() {
   const landed = photos.filter(p => p.landed);
   if (landed.length === 0) return;
 
-  const ITERS = 8;
-  for (let iter = 0; iter < ITERS; iter++) {
+  const floorY = window.innerHeight - PH / 2 - 12;
+  const minX   = PW / 2;
+  const maxX   = window.innerWidth - PW / 2;
+  const GAP    = 6;   // minimum gap between photos
+
+  // Snap everyone to floor first
+  landed.forEach(p => { p.y = floorY; });
+
+  // Iterative separation — up to 120 passes
+  for (let iter = 0; iter < 120; iter++) {
+    let anyOverlap = false;
+
     for (let i = 0; i < landed.length; i++) {
       for (let j = i + 1; j < landed.length; j++) {
         const a = landed[i], b = landed[j];
         const dx = b.x - a.x;
-        const overlapX = PW * 0.7 - Math.abs(dx);
-        if (overlapX > 0) {
-          const push = overlapX * 0.35 + 1;
-          if (dx >= 0) { a.x -= push; b.x += push; }
-          else         { a.x += push; b.x -= push; }
+        const dy = b.y - a.y;
+        const overlapX = PW + GAP - Math.abs(dx);
+        const overlapY = PH + GAP - Math.abs(dy);
+
+        if (overlapX <= 0 || overlapY <= 0) continue;
+        anyOverlap = true;
+
+        if (overlapX < overlapY) {
+          // Cheaper to separate horizontally
+          const half = overlapX / 2 + 1;
+          if (dx >= 0) { a.x -= half; b.x += half; }
+          else         { a.x += half; b.x -= half; }
+        } else {
+          // Separate vertically — push the higher photo further up
+          // (lower y value = higher on screen)
+          const half = overlapY / 2 + 1;
+          if (a.y <= b.y) { a.y -= half; }
+          else             { b.y -= half; }
         }
+
+        // Wall clamp after each pair
+        a.x = Math.max(minX, Math.min(maxX, a.x));
+        b.x = Math.max(minX, Math.min(maxX, b.x));
+        // Floor clamp: can't go below floor
+        a.y = Math.min(floorY, a.y);
+        b.y = Math.min(floorY, b.y);
       }
     }
+
+    if (!anyOverlap) break;
   }
 
-  const floorY = window.innerHeight - PH / 2 - 12;
-  const minX   = PW / 2;
-  const maxX   = window.innerWidth - PW / 2;
-
+  // Apply final positions with a smooth transition
   landed.forEach(p => {
-    p.x = Math.max(minX, Math.min(maxX, p.x));
-    p.y = floorY;
+    p.el.style.transition = 'left 0.35s ease, top 0.35s ease';
     p.el.style.left      = (p.x - PW / 2) + 'px';
     p.el.style.top       = (p.y - PH / 2) + 'px';
     p.el.style.transform = `rotate(${p.rot}deg)`;
