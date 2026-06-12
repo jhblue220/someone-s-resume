@@ -465,7 +465,7 @@ function physicsLoop() {
    LIGHTBOX
 ───────────────────────────────────────────── */
 function openLightbox(file) {
-  lbImg.src = 'image/' + file;
+  lbImg.src = 'image/' + encodeURIComponent(file);
   lightbox.classList.add('active');
 }
 
