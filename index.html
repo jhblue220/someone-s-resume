@@ -168,11 +168,8 @@ const PHOTO_FILES = [
 
 const PW = 150;   // photo width
 const PH = 200;   // photo height
-const GRAVITY  = 0.55;
-const FRICTION = 0.82;
-const BOUNCE   = 0.22;
-const SHAKE_SPEED_THRESHOLD = 700; // px/s
-const STACK_THRESHOLD = PW * 0.72; // X-center distance that triggers stacking
+const FRICTION = 0.975;  // per-frame speed decay (1 = no friction)
+const BOUNCE   = 0.55;   // wall elasticity
 
 /* ─────────────────────────────────────────────
    STATE
@@ -291,22 +288,29 @@ function triggerScatter() {
   envImg.src = 'image/봉투_2.png';
   hint.style.opacity = '0';
 
-  // Shuffle
+  // 흔드는 방향 속도 추출
+  let shakeVx = 0, shakeVy = 0;
+  if (mousePts.length >= 2) {
+    const a = mousePts[0], b = mousePts[mousePts.length - 1];
+    const dt = (b.t - a.t) || 1;
+    shakeVx = (b.x - a.x) / dt * 16; // 프레임 단위 속도로 환산
+    shakeVy = (b.y - a.y) / dt * 16;
+  }
+
   const files = [...PHOTO_FILES];
   for (let i = files.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [files[i], files[j]] = [files[j], files[i]];
   }
 
-  // 포포퐁: 한 장씩 순서대로 튀어나오게 스태거
   files.forEach((file, i) => {
-    setTimeout(() => spawnPhoto(file, i), i * 40 + Math.random() * 20);
+    setTimeout(() => spawnPhoto(file, i, shakeVx, shakeVy), i * 40 + Math.random() * 20);
   });
 
   if (!rafId) rafId = requestAnimationFrame(physicsLoop);
 }
 
-function spawnPhoto(file, zIdx) {
+function spawnPhoto(file, zIdx, shakeVx, shakeVy) {
   const el = document.createElement('div');
   el.className = 'photo';
   el.style.width   = PW + 'px';
@@ -320,19 +324,19 @@ function spawnPhoto(file, zIdx) {
   el.appendChild(img);
   stage.appendChild(el);
 
-  // 포포퐁: 위쪽으로 튀어나오되 좌우로 자연스럽게 퍼짐
-  const spread = (Math.random() - 0.5) * Math.PI * 0.75;
-  const spd    = 14 + Math.random() * 8;
-  const vx     = Math.sin(spread) * spd * 0.55;
-  const vy     = -(spd + 1 + Math.random() * 3);
+  // 흔드는 방향 기반으로 퍼짐 — 360° 랜덤 + 셰이크 벡터 편향
+  const angle  = Math.random() * Math.PI * 2;
+  const spd    = 8 + Math.random() * 10;
+  const vx     = Math.cos(angle) * spd + shakeVx * 0.5;
+  const vy     = Math.sin(angle) * spd + shakeVy * 0.5;
 
   const p = {
     el, file,
-    x:    envX + (Math.random() - 0.5) * 60,
-    y:    envY - envH * 0.35,
+    x:    envX + (Math.random() - 0.5) * 40,
+    y:    envY + (Math.random() - 0.5) * 40,
     vx, vy,
-    rot:  (Math.random() - 0.5) * 28,
-    rotV: (Math.random() - 0.5) * 4,
+    rot:  (Math.random() - 0.5) * 30,
+    rotV: (Math.random() - 0.5) * 3,
     landed: false,
     zIdx
   };
@@ -345,60 +349,40 @@ function spawnPhoto(file, zIdx) {
 }
 
 /* ─────────────────────────────────────────────
-   EFFECTIVE FLOOR per photo
-   Returns the Y-center where p should rest:
-   either the hard floor or the top of the
-   tallest landed photo whose X overlaps p.
-───────────────────────────────────────────── */
-function getEffectiveFloor(p) {
-  const hardFloor = window.innerHeight - PH / 2 - 10;
-  let best = hardFloor;
-
-  for (const q of photos) {
-    if (q === p || !q.landed) continue;
-    if (Math.abs(p.x - q.x) < STACK_THRESHOLD) {
-      const candidate = q.y - PH - 1;
-      if (candidate < best) best = candidate;
-    }
-  }
-  return best;
-}
-
-/* ─────────────────────────────────────────────
-   PHYSICS LOOP — 실시간 중력 + 스택 충돌
+   PHYSICS LOOP — 중력 없음, 마찰 + 4면 벽 반사
 ───────────────────────────────────────────── */
 function physicsLoop() {
   let allDone = photos.length > 0;
 
+  const minX = PW / 2, maxX = window.innerWidth  - PW / 2;
+  const minY = PH / 2, maxY = window.innerHeight - PH / 2;
+
   for (const p of photos) {
     if (p.landed) continue;
-    allDone = false;
 
-    p.vy  += GRAVITY;
-    p.x   += p.vx;
-    p.y   += p.vy;
+    // 마찰로 속도 감쇠
+    p.vx   *= FRICTION;
+    p.vy   *= FRICTION;
+    p.rotV *= FRICTION;
+
+    p.x += p.vx;
+    p.y += p.vy;
     p.rot += p.rotV;
-    p.rotV *= 0.972;
-    p.vx   *= 0.994;
 
-    const floor = getEffectiveFloor(p);
+    // 4면 벽 반사
+    if (p.x < minX) { p.x = minX; p.vx =  Math.abs(p.vx) * BOUNCE; p.rotV *= -0.6; }
+    if (p.x > maxX) { p.x = maxX; p.vx = -Math.abs(p.vx) * BOUNCE; p.rotV *= -0.6; }
+    if (p.y < minY) { p.y = minY; p.vy =  Math.abs(p.vy) * BOUNCE; p.rotV *= -0.6; }
+    if (p.y > maxY) { p.y = maxY; p.vy = -Math.abs(p.vy) * BOUNCE; p.rotV *= -0.6; }
 
-    if (p.y >= floor) {
-      p.y   = floor;
-      p.vy *= -BOUNCE;
-      p.vx *= FRICTION;
-      p.rotV *= 0.42;
-      if (Math.abs(p.vy) < 0.85 && Math.abs(p.vx) < 0.35) {
-        p.vy = 0; p.vx = 0; p.rotV = 0;
-        p.landed = true;
-      }
+    // 속도가 충분히 줄면 정지
+    const speed = Math.hypot(p.vx, p.vy);
+    if (speed < 0.15 && Math.abs(p.rotV) < 0.05) {
+      p.vx = 0; p.vy = 0; p.rotV = 0;
+      p.landed = true;
+    } else {
+      allDone = false;
     }
-
-    // 벽 반사
-    const minX = PW / 2, maxX = window.innerWidth - PW / 2;
-    if (p.x < minX) { p.x = minX; p.vx =  Math.abs(p.vx) * 0.4; }
-    if (p.x > maxX) { p.x = maxX; p.vx = -Math.abs(p.vx) * 0.4; }
-    if (p.y < PH / 2) { p.y = PH / 2; p.vy = Math.abs(p.vy) * 0.25; }
 
     p.el.style.left      = (p.x - PW / 2) + 'px';
     p.el.style.top       = (p.y - PH / 2) + 'px';
