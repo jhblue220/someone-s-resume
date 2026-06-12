@@ -50,8 +50,7 @@
     .photo img {
       display: block;
       width: 100%;
-      height: 100%;
-      object-fit: cover;
+      height: auto;
       pointer-events: none;
     }
     .photo::after {
@@ -350,9 +349,8 @@ function triggerScatter() {
 function spawnPhoto(file, zIdx, shakeVx, shakeVy) {
   const el = document.createElement('div');
   el.className = 'photo';
-  el.style.width   = PW + 'px';
-  el.style.height  = PH + 'px';
-  el.style.zIndex  = zIdx + 1;
+  el.style.width  = PW + 'px';
+  el.style.zIndex = zIdx + 1;
 
   const img = document.createElement('img');
   img.src = 'image/' + encodeURIComponent(file);
@@ -375,8 +373,16 @@ function spawnPhoto(file, zIdx, shakeVx, shakeVy) {
     rot:  (Math.random() - 0.5) * 30,
     rotV: (Math.random() - 0.5) * 3,
     landed: false,
-    zIdx
+    zIdx,
+    ph: PW * 1.4   // 기본값; 이미지 로드 후 실제 비율로 갱신
   };
+
+  img.addEventListener('load', () => {
+    if (img.naturalWidth > 0) {
+      p.ph = img.naturalHeight * (PW / img.naturalWidth);
+    }
+  });
+
   photos.push(p);
 
   // 사진 드래그 시작
@@ -422,9 +428,6 @@ function spawnPhoto(file, zIdx, shakeVx, shakeVy) {
 function physicsLoop() {
   let allDone = photos.length > 0;
 
-  const minX = PW / 2, maxX = window.innerWidth  - PW / 2;
-  const minY = PH / 2, maxY = window.innerHeight - PH / 2;
-
   for (const p of photos) {
     if (p.landed) continue;
 
@@ -437,11 +440,12 @@ function physicsLoop() {
     p.y += p.vy;
     p.rot += p.rotV;
 
-    // 4면 벽 반사
-    if (p.x < minX) { p.x = minX; p.vx =  Math.abs(p.vx) * BOUNCE; p.rotV *= -0.6; }
-    if (p.x > maxX) { p.x = maxX; p.vx = -Math.abs(p.vx) * BOUNCE; p.rotV *= -0.6; }
-    if (p.y < minY) { p.y = minY; p.vy =  Math.abs(p.vy) * BOUNCE; p.rotV *= -0.6; }
-    if (p.y > maxY) { p.y = maxY; p.vy = -Math.abs(p.vy) * BOUNCE; p.rotV *= -0.6; }
+    // 4면 벽 반사 (사진마다 실제 높이 사용)
+    const hw = PW / 2, hh = (p.ph || PW) / 2;
+    if (p.x < hw)                        { p.x = hw;                        p.vx =  Math.abs(p.vx) * BOUNCE; p.rotV *= -0.6; }
+    if (p.x > window.innerWidth  - hw)   { p.x = window.innerWidth  - hw;   p.vx = -Math.abs(p.vx) * BOUNCE; p.rotV *= -0.6; }
+    if (p.y < hh)                        { p.y = hh;                        p.vy =  Math.abs(p.vy) * BOUNCE; p.rotV *= -0.6; }
+    if (p.y > window.innerHeight - hh)   { p.y = window.innerHeight - hh;   p.vy = -Math.abs(p.vy) * BOUNCE; p.rotV *= -0.6; }
 
     // 속도가 충분히 줄면 정지
     const speed = Math.hypot(p.vx, p.vy);
@@ -452,8 +456,8 @@ function physicsLoop() {
       allDone = false;
     }
 
-    p.el.style.left      = (p.x - PW / 2) + 'px';
-    p.el.style.top       = (p.y - PH / 2) + 'px';
+    p.el.style.left      = (p.x - hw) + 'px';
+    p.el.style.top       = (p.y - hh) + 'px';
     p.el.style.transform = `rotate(${p.rot}deg)`;
   }
 
