@@ -152,9 +152,47 @@
       letter-spacing: 0.12em;
       pointer-events: none;
     }
+
+    /* ── Typewriter ── */
+    #typewriter-wrap {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 5;
+      pointer-events: none;
+    }
+    #typewriter {
+      font-family: 'Nanum Myeongjo', serif;
+      font-size: clamp(36px, 6vw, 72px);
+      color: #fff;
+      letter-spacing: 0.06em;
+      text-align: center;
+      white-space: nowrap;
+    }
+    #typewriter::after {
+      content: '|';
+      display: inline-block;
+      animation: blink 0.75s step-end infinite;
+      margin-left: 2px;
+      opacity: 1;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+    #typewriter-wrap.hidden {
+      opacity: 0;
+      transition: opacity 0.8s ease;
+    }
   </style>
 </head>
 <body>
+
+<div id="typewriter-wrap">
+  <span id="typewriter"></span>
+</div>
 
 <div id="stage">
   <div id="envelope">
@@ -345,6 +383,7 @@ function triggerScatter() {
   isOpen = true;
   envImg.src = 'image/봉투_2.png';
   hint.style.opacity = '0';
+  hideTypewriter();
 
   // 흔드는 방향 속도 추출
   let shakeVx = 0, shakeVy = 0;
@@ -507,6 +546,51 @@ document.addEventListener('keydown', e => {
 function closeLightbox() {
   lightbox.classList.remove('active');
   lbImg.src = '';
+}
+
+/* ─────────────────────────────────────────────
+   TYPEWRITER
+───────────────────────────────────────────── */
+const TW_PHRASES   = ['치열하고', '열정적인', '26년도', '누군가의', '이력서'];
+const TW_TYPE_MS   = 130;   // 타이핑 속도 (글자당 ms)
+const TW_DEL_MS    = 70;    // 지우기 속도
+const TW_PAUSE_END = 900;   // 완성 후 대기
+const TW_PAUSE_GAP = 250;   // 다음 단어 전 대기
+
+const twEl   = document.getElementById('typewriter');
+const twWrap = document.getElementById('typewriter-wrap');
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function typewriterLoop() {
+  let idx = 0;
+  while (true) {
+    const phrase = TW_PHRASES[idx];
+
+    // 타이핑
+    for (let i = 1; i <= phrase.length; i++) {
+      twEl.textContent = phrase.slice(0, i);
+      await sleep(TW_TYPE_MS);
+    }
+
+    await sleep(TW_PAUSE_END);
+
+    // 지우기
+    for (let i = phrase.length - 1; i >= 0; i--) {
+      twEl.textContent = phrase.slice(0, i);
+      await sleep(TW_DEL_MS);
+    }
+
+    await sleep(TW_PAUSE_GAP);
+    idx = (idx + 1) % TW_PHRASES.length;
+  }
+}
+
+typewriterLoop();
+
+// 사진 흩뿌려지면 타이프라이터 페이드 아웃
+function hideTypewriter() {
+  twWrap.classList.add('hidden');
 }
 
 /* ─────────────────────────────────────────────
