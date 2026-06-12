@@ -241,6 +241,12 @@ document.addEventListener('mousemove', e => {
   envY = ny;
   placeEnvelope();
 
+  // 드래그 시작하는 순간 봉투_2로 전환
+  if (!isOpen) {
+    isOpen = true;
+    envImg.src = 'image/봉투_2.png';
+  }
+
   mousePts.push({ x: e.clientX, y: e.clientY, t: performance.now() });
   if (mousePts.length > 12) mousePts.shift();
 
@@ -249,23 +255,10 @@ document.addEventListener('mousemove', e => {
 
 document.addEventListener('mouseup', e => {
   if (!isDragging) return;
-  const wasDragging = mousePts.length > 2;
   isDragging = false;
   envEl.classList.remove('grabbing');
-
-  if (!wasDragging && !scattered) {
-    toggleOpen();
-  }
   mousePts = [];
 });
-
-/* ─────────────────────────────────────────────
-   CLICK TOGGLE
-───────────────────────────────────────────── */
-function toggleOpen() {
-  isOpen = !isOpen;
-  envImg.src = isOpen ? 'image/봉투_2.png' : 'image/봉투_1.png';
-}
 
 /* ─────────────────────────────────────────────
    SHAKE DETECTION
