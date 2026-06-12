@@ -413,65 +413,49 @@ function physicsLoop() {
 
 /* ─────────────────────────────────────────────
    OVERLAP RESOLUTION (post-settle)
-   2D separation: pushes apart on whichever axis
-   has smaller overlap; photos stack upward when
-   horizontal space is exhausted.
+   Strategy: sort by X, place each photo at
+   floorY, then raise it above any photo whose
+   X-range it overlaps — pure upward stacking.
 ───────────────────────────────────────────── */
 function resolveOverlaps() {
   const landed = photos.filter(p => p.landed);
   if (landed.length === 0) return;
 
   const floorY = window.innerHeight - PH / 2 - 12;
-  const minX   = PW / 2;
-  const maxX   = window.innerWidth - PW / 2;
-  const GAP    = 6;   // minimum gap between photos
+  const GAP_X  = 2;   // horizontal gap before stacking kicks in
+  const GAP_Y  = 4;   // vertical gap between stacked photos
 
-  // Snap everyone to floor first
-  landed.forEach(p => { p.y = floorY; });
+  // Sort left → right so stacks build naturally
+  landed.sort((a, b) => a.x - b.x);
 
-  // Iterative separation — up to 120 passes
-  for (let iter = 0; iter < 120; iter++) {
-    let anyOverlap = false;
+  const placed = []; // already-resolved photos
 
-    for (let i = 0; i < landed.length; i++) {
-      for (let j = i + 1; j < landed.length; j++) {
-        const a = landed[i], b = landed[j];
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const overlapX = PW + GAP - Math.abs(dx);
-        const overlapY = PH + GAP - Math.abs(dy);
+  for (const p of landed) {
+    p.y = floorY; // always start at floor
 
-        if (overlapX <= 0 || overlapY <= 0) continue;
-        anyOverlap = true;
+    // Find all already-placed photos whose X range overlaps this one
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const q of placed) {
+        const overlapX = (PW + GAP_X) - Math.abs(p.x - q.x);
+        if (overlapX <= 0) continue; // no X overlap → skip
 
-        if (overlapX < overlapY) {
-          // Cheaper to separate horizontally
-          const half = overlapX / 2 + 1;
-          if (dx >= 0) { a.x -= half; b.x += half; }
-          else         { a.x += half; b.x -= half; }
-        } else {
-          // Separate vertically — push the higher photo further up
-          // (lower y value = higher on screen)
-          const half = overlapY / 2 + 1;
-          if (a.y <= b.y) { a.y -= half; }
-          else             { b.y -= half; }
-        }
+        const overlapY = (PH + GAP_Y) - Math.abs(p.y - q.y);
+        if (overlapY <= 0) continue; // already clear vertically
 
-        // Wall clamp after each pair
-        a.x = Math.max(minX, Math.min(maxX, a.x));
-        b.x = Math.max(minX, Math.min(maxX, b.x));
-        // Floor clamp: can't go below floor
-        a.y = Math.min(floorY, a.y);
-        b.y = Math.min(floorY, b.y);
+        // Stack p on top of q
+        p.y = q.y - PH - GAP_Y;
+        changed = true; // recheck all placed photos from new y
       }
     }
 
-    if (!anyOverlap) break;
+    placed.push(p);
   }
 
-  // Apply final positions with a smooth transition
+  // Smooth slide into final position
   landed.forEach(p => {
-    p.el.style.transition = 'left 0.35s ease, top 0.35s ease';
+    p.el.style.transition = 'left 0.4s cubic-bezier(.22,.68,0,1.2), top 0.4s cubic-bezier(.22,.68,0,1.2)';
     p.el.style.left      = (p.x - PW / 2) + 'px';
     p.el.style.top       = (p.y - PH / 2) + 'px';
     p.el.style.transform = `rotate(${p.rot}deg)`;
