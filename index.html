@@ -194,6 +194,12 @@ let scattered    = false;
 let photos = [];                // live physics objects
 let rafId  = null;
 
+// Photo drag state
+let dragPhoto    = null;
+let dragPhotoOX  = 0, dragPhotoOY = 0;
+let dragPhotoHist = [];
+let photoTopZ    = 50;   // increments each grab; envelope stays at 200
+
 /* ─────────────────────────────────────────────
    ENVELOPE SETUP
 ───────────────────────────────────────────── */
@@ -231,30 +237,61 @@ envEl.addEventListener('mousedown', e => {
 });
 
 document.addEventListener('mousemove', e => {
-  if (!isDragging) return;
-  const nx = e.clientX - dragOX;
-  const ny = e.clientY - dragOY;
-  envX = nx;
-  envY = ny;
-  placeEnvelope();
+  // ── 봉투 드래그 ──
+  if (isDragging) {
+    envX = e.clientX - dragOX;
+    envY = e.clientY - dragOY;
+    placeEnvelope();
 
-  // 드래그 시작하는 순간 봉투_2로 전환
-  if (!isOpen) {
-    isOpen = true;
-    envImg.src = 'image/봉투_2.png';
+    if (!isOpen) {
+      isOpen = true;
+      envImg.src = 'image/봉투_2.png';
+    }
+
+    mousePts.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+    if (mousePts.length > 12) mousePts.shift();
+    if (!scattered) checkShake();
   }
 
-  mousePts.push({ x: e.clientX, y: e.clientY, t: performance.now() });
-  if (mousePts.length > 12) mousePts.shift();
+  // ── 사진 드래그 ──
+  if (dragPhoto) {
+    dragPhoto.x = e.clientX - dragPhotoOX;
+    dragPhoto.y = e.clientY - dragPhotoOY;
+    dragPhoto.el.style.left = (dragPhoto.x - PW / 2) + 'px';
+    dragPhoto.el.style.top  = (dragPhoto.y - PH / 2) + 'px';
 
-  if (!scattered) checkShake();
+    dragPhotoHist.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+    if (dragPhotoHist.length > 8) dragPhotoHist.shift();
+  }
 });
 
 document.addEventListener('mouseup', e => {
-  if (!isDragging) return;
-  isDragging = false;
-  envEl.classList.remove('grabbing');
-  mousePts = [];
+  // ── 봉투 드래그 종료 ──
+  if (isDragging) {
+    isDragging = false;
+    envEl.classList.remove('grabbing');
+    mousePts = [];
+  }
+
+  // ── 사진 던지기 ──
+  if (dragPhoto) {
+    const p = dragPhoto;
+    dragPhoto = null;
+
+    if (dragPhotoHist.length >= 2) {
+      const recent = dragPhotoHist.slice(-4);
+      const dt = (recent[recent.length - 1].t - recent[0].t) || 1;
+      p.vx = (recent[recent.length - 1].x - recent[0].x) / dt * 16;
+      p.vy = (recent[recent.length - 1].y - recent[0].y) / dt * 16;
+      p.rotV = p.vx * 0.04;
+    } else {
+      p.vx = 0; p.vy = 0;
+    }
+
+    p.landed = false;
+    dragPhotoHist = [];
+    if (!rafId) rafId = requestAnimationFrame(physicsLoop);
+  }
 });
 
 /* ─────────────────────────────────────────────
@@ -342,7 +379,38 @@ function spawnPhoto(file, zIdx, shakeVx, shakeVy) {
   };
   photos.push(p);
 
-  el.addEventListener('click', () => {
+  // 사진 드래그 시작
+  el.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    e.stopPropagation();      // 봉투 드래그 방지
+    e.preventDefault();
+
+    dragPhoto   = p;
+    dragPhotoOX = e.clientX - p.x;
+    dragPhotoOY = e.clientY - p.y;
+    dragPhotoHist = [];
+
+    // 맨 위로 (봉투 z-index 200보다 항상 아래)
+    photoTopZ = Math.min(photoTopZ + 1, 198);
+    p.el.style.zIndex = photoTopZ;
+    p.el.style.cursor = 'grabbing';
+
+    // 물리 일시정지
+    p.vx = 0; p.vy = 0; p.rotV = 0;
+    p.landed = true;
+    p._dragStartX = e.clientX;
+    p._dragStartY = e.clientY;
+  });
+
+  el.addEventListener('mouseup', e => {
+    p.el.style.cursor = 'pointer';
+  });
+
+  // 클릭(드래그 아닌 경우만) → 라이트박스
+  el.addEventListener('click', e => {
+    const dx = e.clientX - (p._dragStartX || e.clientX);
+    const dy = e.clientY - (p._dragStartY || e.clientY);
+    if (Math.hypot(dx, dy) > 6) return;   // 드래그였으면 무시
     if (!p.landed) return;
     openLightbox(file);
   });
