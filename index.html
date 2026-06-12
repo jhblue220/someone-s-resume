@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Photo Archive</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #000;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    }
+
+    #stage {
+      position: fixed;
+      inset: 0;
+    }
+
+    /* ── Envelope ── */
+    #envelope {
+      position: absolute;
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
+      transform-origin: center center;
+      z-index: 200;
+      transition: filter 0.15s;
+    }
+    #envelope:hover { filter: brightness(1.08); }
+    #envelope.grabbing { cursor: grabbing; }
+    #envelope img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    /* ── Scattered photos ── */
+    .photo {
+      position: absolute;
+      cursor: pointer;
+      user-select: none;
+      transform-origin: center center;
+      will-change: transform, left, top;
+    }
+    .photo img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      pointer-events: none;
+    }
+    .photo::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,0);
+      transition: background 0.18s;
+    }
+    .photo:hover::after { background: rgba(255,255,255,0.06); }
+
+    /* ── Hint text ── */
+    #hint {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255,255,255,0.28);
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      pointer-events: none;
+      transition: opacity 1.2s ease;
+      white-space: nowrap;
+    }
+
+    /* ── Shake indicator ── */
+    #shake-meter {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    #shake-meter.active { opacity: 1; }
+    #shake-ring {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(255,255,255,0.5);
+      background: transparent;
+      transform-origin: center center;
+      transition: transform 0.1s;
+    }
+
+    /* ── Lightbox ── */
+    #lightbox {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.94);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+    }
+    #lightbox.active {
+      display: flex;
+      animation: lb-in 0.22s ease;
+    }
+    @keyframes lb-in {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    #lightbox img {
+      max-width: 88vw;
+      max-height: 88vh;
+      object-fit: contain;
+      pointer-events: none;
+    }
+    #lb-close {
+      position: fixed;
+      top: 24px;
+      right: 28px;
+      color: rgba(255,255,255,0.45);
+      font-size: 13px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="envelope">
+    <img id="env-img" src="image/봉투_1.png" alt="envelope">
+  </div>
+</div>
+
+<div id="lightbox">
+  <img id="lb-img" src="" alt="">
+  <span id="lb-close">esc to close</span>
+</div>
+
+<div id="hint">Click or shake to open</div>
+
+<script>
+/* ─────────────────────────────────────────────
+   CONFIG
+───────────────────────────────────────────── */
+const PHOTO_FILES = [
+  '거꾸로가 어때서_1.jpg','거꾸로가 어때서_2.jpg','거꾸로가 어때서_3.jpg',
+  '거꾸로가 어때서_4.jpg','거꾸로가 어때서_5.jpg','거꾸로가 어때서_6.jpg',
+  '나 좀 뽑아줘.jpg','나 좀 뽑아줘_2.jpg','너가 부럽다.jpg','너넨 왜 안자니?.jpg',
+  '넘어져도 일어서야지.jpg','달려야 산다.jpg','달려야산다_2.jpg','더마시면 죽ㄱ....jpg.jpg',
+  '돈을 쫓지마라.jpg','맘 편히 놀지를 못하네.jpg','으어ㅡㅓ으뭐라는거야.jpg',
+  '이력서.png','자도 자는게 아니야.jpg','자연에서 뛰놀고 싶다.jpg','잠의 유혹.jpg',
+  '정신차려라.jpg','집에서 일터로.jpg','하..놀러가고싶다^^.jpg','할머니의 염원.jpg',
+  '훨훨 날아가자.jpg','히히.jpg'
+];
+
+const PW = 150;   // photo width
+const PH = 200;   // photo height
+const GRAVITY  = 0.52;
+const FRICTION = 0.88;
+const BOUNCE   = 0.18;
+const SHAKE_SPEED_THRESHOLD = 700; // px/s
+
+/* ─────────────────────────────────────────────
+   STATE
+───────────────────────────────────────────── */
+const stage    = document.getElementById('stage');
+const envEl    = document.getElementById('envelope');
+const envImg   = document.getElementById('env-img');
+const lightbox = document.getElementById('lightbox');
+const lbImg    = document.getElementById('lb-img');
+const hint     = document.getElementById('hint');
+
+let envW = 0, envH = 0;
+let envX = window.innerWidth / 2;
+let envY = window.innerHeight / 2;
+
+let isDragging   = false;
+let dragOX = 0, dragOY = 0;
+let mousePts     = [];          // {x,y,t}
+let isOpen       = false;
+let scattered    = false;
+
+let photos = [];                // live physics objects
+let rafId  = null;
+
+/* ─────────────────────────────────────────────
+   ENVELOPE SETUP
+───────────────────────────────────────────── */
+function initEnvelope() {
+  const maxW = Math.min(260, window.innerWidth * 0.38);
+  const nat  = envImg.naturalWidth || 260;
+  const natH = envImg.naturalHeight || 180;
+  const scale = Math.min(1, maxW / nat);
+  envW = nat * scale;
+  envH = natH * scale;
+  envEl.style.width  = envW + 'px';
+  envEl.style.height = envH + 'px';
+  envImg.style.cssText = 'width:100%;height:100%;object-fit:contain;';
+  placeEnvelope();
+}
+
+function placeEnvelope() {
+  envEl.style.left = (envX - envW / 2) + 'px';
+  envEl.style.top  = (envY - envH / 2) + 'px';
+}
+
+envImg.addEventListener('load', initEnvelope);
+if (envImg.complete) initEnvelope();
+
+/* ─────────────────────────────────────────────
+   DRAG
+───────────────────────────────────────────── */
+envEl.addEventListener('mousedown', e => {
+  isDragging = true;
+  dragOX = e.clientX - envX;
+  dragOY = e.clientY - envY;
+  envEl.classList.add('grabbing');
+  mousePts = [];
+  e.preventDefault();
+});
+
+document.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  const nx = e.clientX - dragOX;
+  const ny = e.clientY - dragOY;
+  envX = nx;
+  envY = ny;
+  placeEnvelope();
+
+  mousePts.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+  if (mousePts.length > 12) mousePts.shift();
+
+  if (!scattered) checkShake();
+});
+
+document.addEventListener('mouseup', e => {
+  if (!isDragging) return;
+  const wasDragging = mousePts.length > 2;
+  isDragging = false;
+  envEl.classList.remove('grabbing');
+
+  if (!wasDragging && !scattered) {
+    toggleOpen();
+  }
+  mousePts = [];
+});
+
+/* ─────────────────────────────────────────────
+   CLICK TOGGLE
+───────────────────────────────────────────── */
+function toggleOpen() {
+  isOpen = !isOpen;
+  envImg.src = isOpen ? 'image/봉투_2.png' : 'image/봉투_1.png';
+}
+
+/* ─────────────────────────────────────────────
+   SHAKE DETECTION
+───────────────────────────────────────────── */
+function checkShake() {
+  if (mousePts.length < 5) return;
+
+  const pts = mousePts.slice(-6);
+  const dt  = pts[pts.length - 1].t - pts[0].t;
+  if (dt < 1) return;
+
+  let dist = 0;
+  let dirFlips = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const dx = pts[i].x - pts[i-1].x;
+    const dy = pts[i].y - pts[i-1].y;
+    dist += Math.hypot(dx, dy);
+    if (i >= 2) {
+      const dx0 = pts[i-1].x - pts[i-2].x;
+      if (dx * dx0 < -20) dirFlips++;
+    }
+  }
+
+  const speed = (dist / dt) * 1000;
+  if (speed > SHAKE_SPEED_THRESHOLD && dirFlips >= 1) {
+    triggerScatter();
+  }
+}
+
+/* ─────────────────────────────────────────────
+   SCATTER
+───────────────────────────────────────────── */
+function triggerScatter() {
+  if (scattered) return;
+  scattered = true;
+  isOpen = true;
+  envImg.src = 'image/봉투_2.png';
+  hint.style.opacity = '0';
+
+  // Shuffle
+  const files = [...PHOTO_FILES];
+  for (let i = files.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [files[i], files[j]] = [files[j], files[i]];
+  }
+
+  files.forEach((file, i) => {
+    setTimeout(() => spawnPhoto(file, i), i * 55);
+  });
+
+  if (!rafId) rafId = requestAnimationFrame(physicsLoop);
+}
+
+function spawnPhoto(file, zIdx) {
+  const el = document.createElement('div');
+  el.className = 'photo';
+  el.style.width   = PW + 'px';
+  el.style.height  = PH + 'px';
+  el.style.zIndex  = zIdx + 1;
+
+  const img = document.createElement('img');
+  img.src = 'image/' + file.replace(/[#?]/g, encodeURIComponent);
+  img.alt = file;
+  img.draggable = false;
+  el.appendChild(img);
+  stage.appendChild(el);
+
+  // Launch angle: wide fan upward
+  const spread = (Math.random() - 0.5) * Math.PI * 1.2;
+  const spd    = 9 + Math.random() * 10;
+  const vx     = Math.sin(spread) * spd;
+  const vy     = -(Math.cos(spread) * spd * 0.6 + 5 + Math.random() * 7);
+
+  const p = {
+    el,
+    file,
+    x:   envX + (Math.random() - 0.5) * 50,
+    y:   envY - envH * 0.3,
+    vx,
+    vy,
+    rot:    (Math.random() - 0.5) * 25,
+    rotV:   (Math.random() - 0.5) * 3.5,
+    landed: false,
+    zIdx
+  };
+  photos.push(p);
+
+  el.addEventListener('click', () => {
+    if (!p.landed) return;
+    openLightbox(file);
+  });
+}
+
+/* ─────────────────────────────────────────────
+   PHYSICS LOOP
+───────────────────────────────────────────── */
+function physicsLoop() {
+  const floorY = window.innerHeight - PH / 2 - 12;
+
+  let allDone = photos.length > 0;
+
+  for (const p of photos) {
+    if (p.landed) continue;
+    allDone = false;
+
+    p.vy  += GRAVITY;
+    p.x   += p.vx;
+    p.y   += p.vy;
+    p.rot += p.rotV;
+    p.rotV *= 0.975;
+    p.vx   *= 0.992;
+
+    // Floor collision
+    if (p.y >= floorY) {
+      p.y  = floorY;
+      p.vy *= -BOUNCE;
+      p.vx *= FRICTION;
+      p.rotV *= 0.45;
+      if (Math.abs(p.vy) < 0.9 && Math.abs(p.vx) < 0.4) {
+        p.vy = 0; p.vx = 0; p.rotV = 0;
+        p.landed = true;
+      }
+    }
+
+    // Wall collision
+    const minX = PW / 2, maxX = window.innerWidth - PW / 2;
+    if (p.x < minX) { p.x = minX; p.vx = Math.abs(p.vx) * 0.4; }
+    if (p.x > maxX) { p.x = maxX; p.vx = -Math.abs(p.vx) * 0.4; }
+
+    // Top wall
+    if (p.y < PH / 2) { p.y = PH / 2; p.vy = Math.abs(p.vy) * 0.3; }
+
+    p.el.style.left      = (p.x - PW / 2) + 'px';
+    p.el.style.top       = (p.y - PH / 2) + 'px';
+    p.el.style.transform = `rotate(${p.rot}deg)`;
+  }
+
+  if (allDone) {
+    rafId = null;
+    resolveOverlaps();
+    return;
+  }
+
+  rafId = requestAnimationFrame(physicsLoop);
+}
+
+/* ─────────────────────────────────────────────
+   OVERLAP RESOLUTION (post-settle)
+───────────────────────────────────────────── */
+function resolveOverlaps() {
+  const landed = photos.filter(p => p.landed);
+  if (landed.length === 0) return;
+
+  const ITERS = 8;
+  for (let iter = 0; iter < ITERS; iter++) {
+    for (let i = 0; i < landed.length; i++) {
+      for (let j = i + 1; j < landed.length; j++) {
+        const a = landed[i], b = landed[j];
+        const dx = b.x - a.x;
+        const overlapX = PW * 0.7 - Math.abs(dx);
+        if (overlapX > 0) {
+          const push = overlapX * 0.35 + 1;
+          if (dx >= 0) { a.x -= push; b.x += push; }
+          else         { a.x += push; b.x -= push; }
+        }
+      }
+    }
+  }
+
+  const floorY = window.innerHeight - PH / 2 - 12;
+  const minX   = PW / 2;
+  const maxX   = window.innerWidth - PW / 2;
+
+  landed.forEach(p => {
+    p.x = Math.max(minX, Math.min(maxX, p.x));
+    p.y = floorY;
+    p.el.style.left      = (p.x - PW / 2) + 'px';
+    p.el.style.top       = (p.y - PH / 2) + 'px';
+    p.el.style.transform = `rotate(${p.rot}deg)`;
+  });
+}
+
+/* ─────────────────────────────────────────────
+   LIGHTBOX
+───────────────────────────────────────────── */
+function openLightbox(file) {
+  lbImg.src = 'image/' + file;
+  lightbox.classList.add('active');
+}
+
+lightbox.addEventListener('click', closeLightbox);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeLightbox();
+});
+
+function closeLightbox() {
+  lightbox.classList.remove('active');
+  lbImg.src = '';
+}
+
+/* ─────────────────────────────────────────────
+   HINT FADE
+───────────────────────────────────────────── */
+setTimeout(() => { hint.style.opacity = '0'; }, 3800);
+</script>
+</body>
+</html>
