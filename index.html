@@ -264,26 +264,19 @@ document.addEventListener('mouseup', e => {
    SHAKE DETECTION
 ───────────────────────────────────────────── */
 function checkShake() {
-  if (mousePts.length < 5) return;
+  if (mousePts.length < 3) return;
 
-  const pts = mousePts.slice(-6);
+  const pts = mousePts.slice(-4);
   const dt  = pts[pts.length - 1].t - pts[0].t;
   if (dt < 1) return;
 
   let dist = 0;
-  let dirFlips = 0;
   for (let i = 1; i < pts.length; i++) {
-    const dx = pts[i].x - pts[i-1].x;
-    const dy = pts[i].y - pts[i-1].y;
-    dist += Math.hypot(dx, dy);
-    if (i >= 2) {
-      const dx0 = pts[i-1].x - pts[i-2].x;
-      if (dx * dx0 < -20) dirFlips++;
-    }
+    dist += Math.hypot(pts[i].x - pts[i-1].x, pts[i].y - pts[i-1].y);
   }
 
   const speed = (dist / dt) * 1000;
-  if (speed > SHAKE_SPEED_THRESHOLD && dirFlips >= 1) {
+  if (speed > 400) {
     triggerScatter();
   }
 }
@@ -307,7 +300,7 @@ function triggerScatter() {
 
   // 포포퐁: 한 장씩 순서대로 튀어나오게 스태거
   files.forEach((file, i) => {
-    setTimeout(() => spawnPhoto(file, i), i * 100 + Math.random() * 30);
+    setTimeout(() => spawnPhoto(file, i), i * 40 + Math.random() * 20);
   });
 
   if (!rafId) rafId = requestAnimationFrame(physicsLoop);
