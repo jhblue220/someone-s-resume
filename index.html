@@ -349,7 +349,8 @@ function triggerScatter() {
 function spawnPhoto(file, zIdx, shakeVx, shakeVy) {
   const el = document.createElement('div');
   el.className = 'photo';
-  el.style.width  = PW + 'px';
+  const pw = file === '집에서 일터로.jpg' ? PW * 2 : PW;
+  el.style.width  = pw + 'px';
   el.style.zIndex = zIdx + 1;
 
   const img = document.createElement('img');
@@ -374,12 +375,13 @@ function spawnPhoto(file, zIdx, shakeVx, shakeVy) {
     rotV: (Math.random() - 0.5) * 3,
     landed: false,
     zIdx,
-    ph: PW * 1.4   // 기본값; 이미지 로드 후 실제 비율로 갱신
+    pw,
+    ph: pw * 1.4   // 기본값; 이미지 로드 후 실제 비율로 갱신
   };
 
   img.addEventListener('load', () => {
     if (img.naturalWidth > 0) {
-      p.ph = img.naturalHeight * (PW / img.naturalWidth);
+      p.ph = img.naturalHeight * (pw / img.naturalWidth);
     }
   });
 
@@ -441,7 +443,7 @@ function physicsLoop() {
     p.rot += p.rotV;
 
     // 4면 벽 반사 (사진마다 실제 높이 사용)
-    const hw = PW / 2, hh = (p.ph || PW) / 2;
+    const hw = (p.pw || PW) / 2, hh = (p.ph || PW) / 2;
     if (p.x < hw)                        { p.x = hw;                        p.vx =  Math.abs(p.vx) * BOUNCE; p.rotV *= -0.6; }
     if (p.x > window.innerWidth  - hw)   { p.x = window.innerWidth  - hw;   p.vx = -Math.abs(p.vx) * BOUNCE; p.rotV *= -0.6; }
     if (p.y < hh)                        { p.y = hh;                        p.vy =  Math.abs(p.vy) * BOUNCE; p.rotV *= -0.6; }
