@@ -168,10 +168,11 @@ const PHOTO_FILES = [
 
 const PW = 150;   // photo width
 const PH = 200;   // photo height
-const GRAVITY  = 0.52;
-const FRICTION = 0.88;
-const BOUNCE   = 0.18;
+const GRAVITY  = 0.55;
+const FRICTION = 0.82;
+const BOUNCE   = 0.22;
 const SHAKE_SPEED_THRESHOLD = 700; // px/s
+const STACK_THRESHOLD = PW * 0.72; // X-center distance that triggers stacking
 
 /* ─────────────────────────────────────────────
    STATE
@@ -311,8 +312,9 @@ function triggerScatter() {
     [files[i], files[j]] = [files[j], files[i]];
   }
 
+  // 포포퐁: 한 장씩 순서대로 튀어나오게 스태거
   files.forEach((file, i) => {
-    setTimeout(() => spawnPhoto(file, i), i * 55);
+    setTimeout(() => spawnPhoto(file, i), i * 100 + Math.random() * 30);
   });
 
   if (!rafId) rafId = requestAnimationFrame(physicsLoop);
@@ -326,27 +328,25 @@ function spawnPhoto(file, zIdx) {
   el.style.zIndex  = zIdx + 1;
 
   const img = document.createElement('img');
-  img.src = 'image/' + file.replace(/[#?]/g, encodeURIComponent);
+  img.src = 'image/' + file;
   img.alt = file;
   img.draggable = false;
   el.appendChild(img);
   stage.appendChild(el);
 
-  // Launch angle: wide fan upward
-  const spread = (Math.random() - 0.5) * Math.PI * 1.2;
-  const spd    = 9 + Math.random() * 10;
-  const vx     = Math.sin(spread) * spd;
-  const vy     = -(Math.cos(spread) * spd * 0.6 + 5 + Math.random() * 7);
+  // 포포퐁: 위쪽으로 튀어나오되 좌우로 자연스럽게 퍼짐
+  const spread = (Math.random() - 0.5) * Math.PI * 0.75;
+  const spd    = 14 + Math.random() * 8;
+  const vx     = Math.sin(spread) * spd * 0.55;
+  const vy     = -(spd + 1 + Math.random() * 3);
 
   const p = {
-    el,
-    file,
-    x:   envX + (Math.random() - 0.5) * 50,
-    y:   envY - envH * 0.3,
-    vx,
-    vy,
-    rot:    (Math.random() - 0.5) * 25,
-    rotV:   (Math.random() - 0.5) * 3.5,
+    el, file,
+    x:    envX + (Math.random() - 0.5) * 60,
+    y:    envY - envH * 0.35,
+    vx, vy,
+    rot:  (Math.random() - 0.5) * 28,
+    rotV: (Math.random() - 0.5) * 4,
     landed: false,
     zIdx
   };
@@ -359,11 +359,29 @@ function spawnPhoto(file, zIdx) {
 }
 
 /* ─────────────────────────────────────────────
-   PHYSICS LOOP
+   EFFECTIVE FLOOR per photo
+   Returns the Y-center where p should rest:
+   either the hard floor or the top of the
+   tallest landed photo whose X overlaps p.
+───────────────────────────────────────────── */
+function getEffectiveFloor(p) {
+  const hardFloor = window.innerHeight - PH / 2 - 10;
+  let best = hardFloor;
+
+  for (const q of photos) {
+    if (q === p || !q.landed) continue;
+    if (Math.abs(p.x - q.x) < STACK_THRESHOLD) {
+      const candidate = q.y - PH - 1;
+      if (candidate < best) best = candidate;
+    }
+  }
+  return best;
+}
+
+/* ─────────────────────────────────────────────
+   PHYSICS LOOP — 실시간 중력 + 스택 충돌
 ───────────────────────────────────────────── */
 function physicsLoop() {
-  const floorY = window.innerHeight - PH / 2 - 12;
-
   let allDone = photos.length > 0;
 
   for (const p of photos) {
@@ -374,92 +392,35 @@ function physicsLoop() {
     p.x   += p.vx;
     p.y   += p.vy;
     p.rot += p.rotV;
-    p.rotV *= 0.975;
-    p.vx   *= 0.992;
+    p.rotV *= 0.972;
+    p.vx   *= 0.994;
 
-    // Floor collision
-    if (p.y >= floorY) {
-      p.y  = floorY;
+    const floor = getEffectiveFloor(p);
+
+    if (p.y >= floor) {
+      p.y   = floor;
       p.vy *= -BOUNCE;
       p.vx *= FRICTION;
-      p.rotV *= 0.45;
-      if (Math.abs(p.vy) < 0.9 && Math.abs(p.vx) < 0.4) {
+      p.rotV *= 0.42;
+      if (Math.abs(p.vy) < 0.85 && Math.abs(p.vx) < 0.35) {
         p.vy = 0; p.vx = 0; p.rotV = 0;
         p.landed = true;
       }
     }
 
-    // Wall collision
+    // 벽 반사
     const minX = PW / 2, maxX = window.innerWidth - PW / 2;
-    if (p.x < minX) { p.x = minX; p.vx = Math.abs(p.vx) * 0.4; }
+    if (p.x < minX) { p.x = minX; p.vx =  Math.abs(p.vx) * 0.4; }
     if (p.x > maxX) { p.x = maxX; p.vx = -Math.abs(p.vx) * 0.4; }
-
-    // Top wall
-    if (p.y < PH / 2) { p.y = PH / 2; p.vy = Math.abs(p.vy) * 0.3; }
+    if (p.y < PH / 2) { p.y = PH / 2; p.vy = Math.abs(p.vy) * 0.25; }
 
     p.el.style.left      = (p.x - PW / 2) + 'px';
     p.el.style.top       = (p.y - PH / 2) + 'px';
     p.el.style.transform = `rotate(${p.rot}deg)`;
   }
 
-  if (allDone) {
-    rafId = null;
-    resolveOverlaps();
-    return;
-  }
-
+  if (allDone) { rafId = null; return; }
   rafId = requestAnimationFrame(physicsLoop);
-}
-
-/* ─────────────────────────────────────────────
-   OVERLAP RESOLUTION (post-settle)
-   Strategy: sort by X, place each photo at
-   floorY, then raise it above any photo whose
-   X-range it overlaps — pure upward stacking.
-───────────────────────────────────────────── */
-function resolveOverlaps() {
-  const landed = photos.filter(p => p.landed);
-  if (landed.length === 0) return;
-
-  const floorY = window.innerHeight - PH / 2 - 12;
-  const GAP_X  = 2;   // horizontal gap before stacking kicks in
-  const GAP_Y  = 4;   // vertical gap between stacked photos
-
-  // Sort left → right so stacks build naturally
-  landed.sort((a, b) => a.x - b.x);
-
-  const placed = []; // already-resolved photos
-
-  for (const p of landed) {
-    p.y = floorY; // always start at floor
-
-    // Find all already-placed photos whose X range overlaps this one
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const q of placed) {
-        const overlapX = (PW + GAP_X) - Math.abs(p.x - q.x);
-        if (overlapX <= 0) continue; // no X overlap → skip
-
-        const overlapY = (PH + GAP_Y) - Math.abs(p.y - q.y);
-        if (overlapY <= 0) continue; // already clear vertically
-
-        // Stack p on top of q
-        p.y = q.y - PH - GAP_Y;
-        changed = true; // recheck all placed photos from new y
-      }
-    }
-
-    placed.push(p);
-  }
-
-  // Smooth slide into final position
-  landed.forEach(p => {
-    p.el.style.transition = 'left 0.4s cubic-bezier(.22,.68,0,1.2), top 0.4s cubic-bezier(.22,.68,0,1.2)';
-    p.el.style.left      = (p.x - PW / 2) + 'px';
-    p.el.style.top       = (p.y - PH / 2) + 'px';
-    p.el.style.transform = `rotate(${p.rot}deg)`;
-  });
 }
 
 /* ─────────────────────────────────────────────
