@@ -70,7 +70,6 @@
     /* ── Hint text ── */
     #hint {
       position: fixed;
-      bottom: 32px;
       left: 50%;
       transform: translateX(-50%);
       color: #fff;
@@ -289,6 +288,7 @@ function initEnvelope() {
 function placeEnvelope() {
   envEl.style.left = (envX - envW / 2) + 'px';
   envEl.style.top  = (envY - envH / 2) + 'px';
+  hint.style.top   = (envY + envH / 2 + 20) + 'px';
 }
 
 envImg.addEventListener('load', initEnvelope);
